@@ -41,10 +41,6 @@ export default {
   },
   resolve: {
     extensions: [".tsx", ".ts", ".js", ".html", ".css"],
-    fallback: {
-      path: "path-browserify",
-      fs: false, // 如果需要 fs，可以使用 browserify-fs
-    },
   },
   optimization: {
     runtimeChunk: "single",
