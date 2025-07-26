@@ -4,9 +4,11 @@ import { GenericItemType } from '../../global';
 import { HeaderProps } from './Header';
 
 export const useHeader = (props: HeaderProps) => {
-   const { setXml, setIsLoading } = props;
+   const { setXml, setIsLoading, setEnableBluetooth } = props;
    const openMIDIFile = useOpenMIDIFile({ setXml, setIsLoading });
-   const bluetooth = useBluetooth();
+   const bluetooth = useBluetooth({
+      setEnableBluetooth: props.setEnableBluetooth,
+   });
 
    const menuItems: GenericItemType[] = [
       openMIDIFile.OpenMIDIFileMenuItem,

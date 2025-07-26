@@ -5,6 +5,7 @@ import { useHeader } from './useHeader';
 export interface HeaderProps {
    setXml: (xml: string) => void;
    setIsLoading: (isLoading: boolean) => void;
+   setEnableBluetooth: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export const Header: React.FC<HeaderProps> = (props) => {

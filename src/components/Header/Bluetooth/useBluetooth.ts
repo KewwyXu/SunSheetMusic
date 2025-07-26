@@ -1,13 +1,18 @@
 ﻿import { ItemType } from 'antd/es/menu/interface';
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { App } from 'antd';
 import { KDP120G_BLE } from '../../../consts/KDP120G_BLE';
 
-export const useBluetooth = () => {
+export interface UseBluetoothProps {
+   setEnableBluetooth: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+export const useBluetooth = (props: UseBluetoothProps) => {
    const { message } = App.useApp();
    const [isConnecting, setIsConnecting] = useState(false);
    const [server, setServer] = useState<BluetoothRemoteGATTServer>(null);
    const bluetooth = navigator.bluetooth;
+   const { setEnableBluetooth } = props;
 
    const connectBluetoothOnClick = async () => {
       setIsConnecting(true);
@@ -23,10 +28,8 @@ export const useBluetooth = () => {
             optionalServices: [KDP120G_BLE.PianoService.UUID],
          });
          const server = await device.gatt.connect();
-         const unknownService = await server.getPrimaryService(KDP120G_BLE.PianoService.UUID);
-         const characteristic = await unknownService.getCharacteristic(
-            KDP120G_BLE.PianoService.characteristics[0].UUID
-         );
+         const pianoService = await server.getPrimaryService(KDP120G_BLE.PianoService.UUID);
+         const characteristic = await pianoService.getCharacteristic(KDP120G_BLE.PianoService.characteristics[0].UUID);
 
          await characteristic.startNotifications();
 
@@ -37,16 +40,19 @@ export const useBluetooth = () => {
          });
 
          setServer(server);
-         message.success(`已连接到设备: ${device.name}`, 3);
+         setEnableBluetooth(true);
+         message.success(`已连接到设备: ${device.name}`, 1);
       } catch (error) {
          message.error(`连接失败: ${error.message}`, 3);
       } finally {
          setIsConnecting(false);
       }
    };
+
    const disconnectBluetoothOnClick = async () => {
       if (server) {
          server.disconnect();
+         setEnableBluetooth(false);
          setServer(null);
          message.success('已断开蓝牙设备连接', 3);
       } else {
@@ -57,26 +63,28 @@ export const useBluetooth = () => {
    const bluetoothMenuItem: ItemType = {
       label: '蓝牙',
       key: 'Bluetooth',
-      children: [
-         {
-            key: 'ConnectBluetooth',
-            label: '连接钢琴蓝牙',
-            onClick: connectBluetoothOnClick,
-            disabled: isConnecting || !!server,
-         },
+      children: [],
+   };
+
+   if (server) {
+      bluetoothMenuItem.children.push(
          {
             key: 'ConnectedBluetoothServer',
             label: `${server.device.name} 连接中...`,
-            disabled: !server,
          },
          {
             key: 'DisconnectBluetooth',
             label: '断开连接',
             onClick: disconnectBluetoothOnClick,
-            disabled: !server,
-         },
-      ],
-   };
+         }
+      );
+   } else {
+      bluetoothMenuItem.children.push({
+         key: 'ConnectBluetooth',
+         label: '连接钢琴蓝牙',
+         onClick: connectBluetoothOnClick,
+      });
+   }
 
    return {
       bluetoothMenuItem,

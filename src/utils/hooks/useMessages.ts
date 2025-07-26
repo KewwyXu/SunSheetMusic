@@ -7,7 +7,7 @@ export const useMessages = () => {
    const succeedUploadingFile = useCallback(async () => {
       await message.success({
          content: 'MIDI文件解析成功',
-         duration: 3,
+         duration: 1,
       });
    }, [message]);
 

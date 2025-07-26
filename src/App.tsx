@@ -1,4 +1,4 @@
-﻿import React from 'react';
+﻿import React, { useState } from 'react';
 import { App as AntdApp, ConfigProvider, Layout } from 'antd';
 import { useApp } from './useApp';
 import { Body } from './components/Body/Body';
@@ -7,6 +7,7 @@ import { Header } from './components/Header/Header';
 export const App: React.FC = () => {
    const { Footer } = Layout;
    const { xml, setXml, isLoading, setIsLoading } = useApp();
+   const [enableBluetooth, setEnableBluetooth] = useState(false);
 
    return (
       <ConfigProvider
@@ -23,9 +24,15 @@ export const App: React.FC = () => {
       >
          <AntdApp>
             <Layout>
-               <Header setXml={setXml} setIsLoading={setIsLoading} />
+               <Header setXml={setXml} setIsLoading={setIsLoading} setEnableBluetooth={setEnableBluetooth} />
 
-               <Body xml={xml} setXml={setXml} isLoading={isLoading} setIsLoading={setIsLoading} />
+               <Body
+                  xml={xml}
+                  setXml={setXml}
+                  isLoading={isLoading}
+                  setIsLoading={setIsLoading}
+                  enableBluetooth={enableBluetooth}
+               />
 
                <Footer style={{ textAlign: 'center' }}>
                   Sun Sheet Music ©{new Date().getFullYear()} Created by Kewwy Xu. A gift to my sun.
