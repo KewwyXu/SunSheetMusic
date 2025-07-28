@@ -2,11 +2,7 @@
 import React from 'react';
 import { useHeader } from './useHeader';
 
-export interface HeaderProps {
-   setXml: (xml: string) => void;
-   setIsLoading: (isLoading: boolean) => void;
-   setEnableBluetooth: React.Dispatch<React.SetStateAction<boolean>>;
-}
+export interface HeaderProps {}
 
 export const Header: React.FC<HeaderProps> = (props) => {
    const { Header: AntdHeader } = Layout;

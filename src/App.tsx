@@ -3,11 +3,15 @@ import { App as AntdApp, ConfigProvider, Layout } from 'antd';
 import { useApp } from './useApp';
 import { Body } from './components/Body/Body';
 import { Header } from './components/Header/Header';
+import { Cursor } from './components/Body/types/Sheet';
+import { AppContext } from './contexts/AppContext';
 
 export const App: React.FC = () => {
    const { Footer } = Layout;
    const { xml, setXml, isLoading, setIsLoading } = useApp();
    const [enableBluetooth, setEnableBluetooth] = useState(false);
+   const [cursor, setCursor] = useState<Cursor>();
+   const [ringingPitches, setRingingPitches] = useState<Set<number>>();
 
    return (
       <ConfigProvider
@@ -23,21 +27,28 @@ export const App: React.FC = () => {
          }}
       >
          <AntdApp>
-            <Layout>
-               <Header setXml={setXml} setIsLoading={setIsLoading} setEnableBluetooth={setEnableBluetooth} />
-
-               <Body
-                  xml={xml}
-                  setXml={setXml}
-                  isLoading={isLoading}
-                  setIsLoading={setIsLoading}
-                  enableBluetooth={enableBluetooth}
-               />
-
-               <Footer style={{ textAlign: 'center' }}>
-                  Sun Sheet Music ©{new Date().getFullYear()} Created by Kewwy Xu. A gift to my sun.
-               </Footer>
-            </Layout>
+            <AppContext
+               value={{
+                  xml,
+                  setXml,
+                  isLoading,
+                  setIsLoading,
+                  enableBluetooth,
+                  setEnableBluetooth,
+                  cursor,
+                  setCursor,
+                  ringingPitches,
+                  setRingingPitches,
+               }}
+            >
+               <Layout>
+                  <Header />
+                  <Body />
+                  <Footer style={{ textAlign: 'center' }}>
+                     Sun Sheet Music ©{new Date().getFullYear()} Created by Kewwy Xu. A gift to my sun.
+                  </Footer>
+               </Layout>
+            </AppContext>
          </AntdApp>
       </ConfigProvider>
    );

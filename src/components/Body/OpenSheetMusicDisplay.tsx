@@ -1,27 +1,33 @@
-﻿import { FC, RefObject, useCallback, useEffect, useRef, useState } from 'react';
+﻿import { FC, RefObject, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { OpenSheetMusicDisplay as OSMD } from 'opensheetmusicdisplay';
 import { IOSMDOptions } from 'opensheetmusicdisplay/build/dist/src/OpenSheetMusicDisplay/OSMDOptions';
 import { useMessages } from '../../utils/hooks/useMessages';
-import { Spin } from 'antd';
-import { DEFAULT_KEY_COLOR, FOCUS_KEY_COLOR } from '../../consts/colors';
+import { App, Skeleton, Spin } from 'antd';
+import { CORRECT_KEY_COLOR, FOCUS_KEY_COLOR, WRONG_KEY_COLOR } from '../../consts/colors';
+import * as im from 'immutable';
+import { Cursor, NoteBox } from './types/Sheet';
+import { AppContext } from '../../contexts/AppContext';
+import { CORRECT_PITCH_HIGHLIGHT_TIME } from '../../consts/times';
 
 export interface OpenSheetMusicDisplayProps {
    options: IOSMDOptions;
    file: string;
-   enableBluetooth: boolean;
 }
 
 export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => {
    const divRef: RefObject<HTMLDivElement> = useRef(null);
+   const skeletonRef: RefObject<HTMLDivElement> = useRef(null);
    const osmdRef: RefObject<OSMD> = useRef(null);
    const { succeedUploadingFile } = useMessages();
+   const { message } = App.useApp();
    const { options, file } = props;
-   let { enableBluetooth } = props;
-   enableBluetooth = true; //TODO to be commented
+   const { enableBluetooth, cursor, setCursor, ringingPitches } = useContext(AppContext);
    const [isLoading, setIsLoading] = useState<boolean>(false);
    const hasProcessedSheetRef = useRef(false);
    const intervalIdRef = useRef(0);
-   const [focusingPitches, setFocusingPitches] = useState<Array<number>>([]);
+   const previousCursorRef = useRef<Cursor>(null);
+   const allCursorsRef = useRef<Cursor[]>(null);
+   const highlightTimeOutsRef = useRef<number[]>(null);
 
    const render = () => {
       if (!osmdRef.current) {
@@ -33,6 +39,88 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
       setIsLoading(false);
    };
 
+   const hideCursor = (cursor: Cursor) => {
+      cursor?.noteBoxes.forEach((x) => {
+         x.box.setAttribute('fill', 'transparent');
+      });
+   };
+
+   const boxOnClick = useCallback(
+      (startTick: number, noteBoxByStartTickMap: im.Map<number, NoteBox[]>) => {
+         hideCursor(previousCursorRef.current);
+
+         const newNoteBoxes = noteBoxByStartTickMap.get(startTick);
+
+         const newCursor = {
+            noteBoxes: newNoteBoxes,
+            startTick: startTick,
+         };
+
+         console.log(newNoteBoxes.map((x) => x.note.parentNote.getAttribute('data-pitches')));
+
+         setCursor(newCursor);
+         previousCursorRef.current = newCursor;
+      },
+      [setCursor]
+   );
+
+   useEffect(() => {
+      cursor?.noteBoxes.forEach((x) => {
+         x.box.setAttribute('fill', FOCUS_KEY_COLOR);
+      });
+   }, [cursor]);
+
+   useEffect(() => {
+      if (ringingPitches && cursor) {
+         highlightTimeOutsRef.current?.forEach(window.clearTimeout);
+
+         const wrongPitches = new Set<number>();
+         const notesCorrection: boolean[] = [];
+
+         for (const noteBox of cursor.noteBoxes) {
+            let hasWrongPitch = false;
+            const pitches = noteBox.note.parentNote
+               .getAttribute('data-pitches')
+               .split(',')
+               .map((x) => Number(x));
+
+            for (const pitch of pitches) {
+               if (!ringingPitches.has(pitch)) {
+                  hasWrongPitch = true;
+                  wrongPitches.add(pitch);
+               }
+            }
+
+            notesCorrection.push(!hasWrongPitch);
+         }
+
+         //move to next cursor
+         if (wrongPitches.size === 0) {
+            const cursorIndex = allCursorsRef.current.findIndex((x) => x.startTick === cursor.startTick);
+
+            //finish
+            if (cursorIndex >= allCursorsRef.current.length - 1) {
+               message.success('恭喜你，演奏结束！');
+            }
+
+            const newCursor = allCursorsRef.current[cursorIndex + 1];
+            setCursor(newCursor);
+            previousCursorRef.current = newCursor;
+            hideCursor(cursor);
+         } else {
+            highlightTimeOutsRef.current = [];
+            cursor.noteBoxes.forEach((noteBox, index) => {
+               noteBox.box.setAttribute('fill', notesCorrection[index] ? CORRECT_KEY_COLOR : WRONG_KEY_COLOR);
+               highlightTimeOutsRef.current.push(
+                  window.setTimeout(() => {
+                     noteBox.box.setAttribute('fill', FOCUS_KEY_COLOR);
+                  }, CORRECT_PITCH_HIGHLIGHT_TIME)
+               );
+            });
+         }
+      }
+   }, [ringingPitches, setCursor, message]);
+
    const processSheet = useCallback(() => {
       const sheetContainer = divRef.current;
       const svg = sheetContainer?.children?.[0]?.children?.[0] as SVGElement;
@@ -41,9 +129,13 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
          return;
       }
 
+      skeletonRef.current.style.display = null;
+      divRef.current.setAttribute('opacity', '0');
+
       const xmlPartMeasures = parseXML();
       const staffLines = svg.getElementsByClassName('staffline');
       const parts: Array<Array<SVGGElement>> = [[], []];
+      const noteBoxByStartTickMap = im.Map<number, NoteBox[]>().asMutable();
 
       for (let i = 0; i < staffLines.length; i++) {
          const measures = Array.from(staffLines[i].getElementsByClassName('vf-measure')) as SVGGElement[];
@@ -75,63 +167,90 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
 
             for (let noteIndex = 0; noteIndex < staveNotes.length; noteIndex++) {
                const note = staveNotes[noteIndex];
+               const childNote = note.getElementsByClassName('vf-note')[0] as SVGGElement;
+               const noteHeads = Array.from(childNote.getElementsByClassName('vf-notehead')) as SVGGElement[];
                const xmlNote = xmlNotes[noteIndex];
                const pitches = Array.from(xmlNote.getElementsByTagName('pitch')).map((x) =>
                   Number(x.getElementsByTagName('MIDINumber')[0].innerHTML)
                );
                const duration = Number(xmlNote.getElementsByTagName('duration')[0].innerHTML);
-               const stemOfNote = stems.find((x) => x.id.includes(note.id));
+               const startTick = currentTick;
 
                note.setAttribute('data-pitches', pitches.toString());
-               note.setAttribute('data-startTick', currentTick.toString());
+               note.setAttribute('data-startTick', startTick.toString());
                currentTick += duration;
                note.setAttribute('data-endTick', currentTick.toString());
 
-               const measureBBox = measure.getBBox();
-               const correspondingMeasure = parts[(partIndex + 1) % 2][measureIndex];
-               const correspondingMeasureBBox = correspondingMeasure.getBBox();
+               const stem = (childNote.getElementsByClassName('vf-stem')?.[0] ??
+                  stems.find((x) => x.id.includes(note.id))) as SVGGElement;
 
-               createCursors(note, measureBBox, correspondingMeasureBBox);
+               if (pitches.length === 0) {
+                  continue;
+               }
+
+               const svgNS = 'http://www.w3.org/2000/svg';
+               const boxGroupClassName = 'custom-box-group';
+               const boxClassName = 'custom-box';
+               let boxGroup = svg.getElementsByClassName(boxGroupClassName)?.[0] as SVGGElement;
+
+               if (!boxGroup) {
+                  boxGroup = document.createElementNS(svgNS, 'g') as SVGGElement;
+                  const svgChildNodes = Array.from(svg.childNodes);
+                  svgChildNodes.forEach((x) => svg.removeChild(x));
+                  svg.append(boxGroup, ...svgChildNodes);
+               }
+
+               const box = document.createElementNS(svgNS, 'rect') as SVGRectElement;
+               box.classList.add(boxClassName);
+               boxGroup.classList.add(boxGroupClassName);
+               boxGroup.append(box);
+
+               const noteBBox = note.getBBox();
+               const stemBBox = stem.getBBox();
+
+               box.setAttribute('x', Math.min(noteBBox.x, stemBBox.x).toString());
+               box.setAttribute('y', Math.min(noteBBox.y, stemBBox.y).toString());
+               box.setAttribute('width', Math.max(noteBBox.width, stemBBox.width).toString());
+               box.setAttribute(
+                  'height',
+                  (
+                     Math.max(noteBBox.y + noteBBox.height, stemBBox.y + stemBBox.height) -
+                     Math.min(noteBBox.y, stemBBox.y)
+                  ).toString()
+               );
+               box.setAttribute('fill', 'transparent');
+
+               const noteBox: NoteBox = {
+                  box: box,
+                  note: {
+                     parentNote: note,
+                     heads: noteHeads,
+                     stem: stem,
+                  },
+               };
+
+               noteBoxByStartTickMap.update(startTick, (arr) => [noteBox].concat(arr ?? []));
+
+               const onClick = () => boxOnClick(startTick, noteBoxByStartTickMap);
+               box.onclick = onClick;
+               note.onclick = onClick;
+               stem.onclick = onClick;
             }
          }
       }
-   }, []);
 
-   const createCursors = (note: SVGGElement, measureBBox: DOMRect, correspondingMeasureBBox: DOMRect) => {
-      const sheetContainer = divRef.current;
-      const svg = sheetContainer?.children?.[0]?.children?.[0] as SVGElement;
-      const noteHeadBBox = note.getBBox();
-      const cursorGroupClassName = 'custom-cursor-group';
-      const cursorClassName = 'custom-cursor';
-      const svgNS = 'http://www.w3.org/2000/svg';
-      const cursorGroup = (svg.getElementsByClassName(cursorGroupClassName)?.[0] ??
-         document.createElementNS(svgNS, 'g')) as SVGGElement;
-      cursorGroup.classList.add(cursorGroupClassName);
-      const cursor = document.createElementNS(svgNS, 'rect') as SVGRectElement;
-      cursorGroup.appendChild(cursor);
-      cursor.classList.add(cursorClassName);
+      allCursorsRef.current = [];
+      for (const entry of noteBoxByStartTickMap) {
+         allCursorsRef.current.push({
+            startTick: entry[0],
+            noteBoxes: entry[1],
+         });
+      }
+      allCursorsRef.current.sort((a, b) => a.startTick - b.startTick);
 
-      const cursorY = Math.min(measureBBox.y, correspondingMeasureBBox.y);
-      const cursorHeight = measureBBox.height + correspondingMeasureBBox.height;
-
-      cursor.setAttribute('x', noteHeadBBox.x.toString());
-      cursor.setAttribute('y', cursorY.toString());
-      cursor.setAttribute('width', noteHeadBBox.width.toString());
-      cursor.setAttribute('height', cursorHeight.toString());
-      cursor.setAttribute('fill', 'transparent');
-      cursor.onclick = () => {
-         const focusingCursor = (Array.from(svg.getElementsByClassName(cursorClassName)) as SVGRectElement[]).find(
-            (x) => x.getAttribute('fill') === FOCUS_KEY_COLOR
-         );
-
-         focusingCursor?.setAttribute('fill', 'transparent');
-         cursor.setAttribute('fill', FOCUS_KEY_COLOR);
-      };
-
-      const svgChildNodes = Array.from(svg.childNodes);
-      svgChildNodes.forEach((x) => svg.removeChild(x));
-      svg.append(cursorGroup, ...svgChildNodes);
-   };
+      skeletonRef.current.style.display = 'none';
+      divRef.current.setAttribute('opacity', '1');
+   }, [boxOnClick]);
 
    const parseXML = () => {
       const xmlString = file ?? window.sessionStorage.getItem('xml');
@@ -179,10 +298,11 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
       intervalIdRef.current = window.setInterval(() => {
          if (divRef.current) {
             divRef.current.onchange ??= processSheet;
-         }
-         if (!hasProcessedSheetRef.current && enableBluetooth) {
-            hasProcessedSheetRef.current = true;
-            divRef.current.onchange(null);
+
+            if (!hasProcessedSheetRef.current && enableBluetooth) {
+               hasProcessedSheetRef.current = true;
+               divRef.current.onchange(null);
+            }
          }
       }, 1000);
    }, [file, enableBluetooth, hasProcessedSheetRef.current]);
@@ -191,5 +311,13 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
       return <Spin />;
    }
 
-   return <div id={'sheetContainer'} ref={divRef} />;
+   return (
+      <div>
+         <div ref={skeletonRef} style={{ display: 'none' }}>
+            <Skeleton active={true} loading={true} />
+         </div>
+
+         <div id={'sheetContainer'} ref={divRef} />
+      </div>
+   );
 };

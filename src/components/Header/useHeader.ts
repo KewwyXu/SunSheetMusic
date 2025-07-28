@@ -2,13 +2,13 @@
 import { useBluetooth } from './Bluetooth/useBluetooth';
 import { GenericItemType } from '../../global';
 import { HeaderProps } from './Header';
+import { useContext } from 'react';
+import { AppContext } from '../../contexts/AppContext';
 
 export const useHeader = (props: HeaderProps) => {
-   const { setXml, setIsLoading, setEnableBluetooth } = props;
+   const { setXml, setIsLoading } = useContext(AppContext);
    const openMIDIFile = useOpenMIDIFile({ setXml, setIsLoading });
-   const bluetooth = useBluetooth({
-      setEnableBluetooth: props.setEnableBluetooth,
-   });
+   const bluetooth = useBluetooth({});
 
    const menuItems: GenericItemType[] = [
       openMIDIFile.OpenMIDIFileMenuItem,

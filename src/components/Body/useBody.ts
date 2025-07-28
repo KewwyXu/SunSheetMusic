@@ -1,9 +1,11 @@
 ﻿import { BodyProps } from './Body';
 import { useParseMIDIToXML } from '../../utils/hooks/useParseMIDIToXML';
 import type { UploadProps } from 'antd';
+import { useContext } from 'react';
+import { AppContext } from '../../contexts/AppContext';
 
 export const useBody = (props: BodyProps) => {
-   const { setXml, setIsLoading } = props;
+   const { setXml, setIsLoading } = useContext(AppContext);
    const { parseMIDIToXML } = useParseMIDIToXML();
 
    const handleFileChange = async (file: File) => {

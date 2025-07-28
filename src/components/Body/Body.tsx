@@ -1,4 +1,4 @@
-﻿import React, { Dispatch, useMemo } from 'react';
+﻿import React, { useContext, useMemo } from 'react';
 import { OpenSheetMusicDisplay } from './OpenSheetMusicDisplay';
 import { InboxOutlined } from '@ant-design/icons';
 import { Content } from 'antd/es/layout/layout';
@@ -6,21 +6,16 @@ import { Spin, theme } from 'antd';
 import Dragger from 'antd/es/upload/Dragger';
 import { useBody } from './useBody';
 import { CursorType, IOSMDOptions } from 'opensheetmusicdisplay';
+import { AppContext } from '../../contexts/AppContext';
 
-export interface BodyProps {
-   xml: string;
-   setXml: Dispatch<React.SetStateAction<string>>;
-   isLoading: boolean;
-   setIsLoading: Dispatch<React.SetStateAction<boolean>>;
-   enableBluetooth: boolean;
-}
+export interface BodyProps {}
 
 export const Body: React.FC<BodyProps> = (props) => {
    const {
       token: { colorBgContainer, borderRadiusLG },
    } = theme.useToken();
 
-   const { xml, isLoading, enableBluetooth } = props;
+   const { xml, isLoading } = useContext(AppContext);
    const { uploadProps } = useBody(props);
 
    const options: IOSMDOptions = useMemo(() => {
@@ -67,7 +62,7 @@ export const Body: React.FC<BodyProps> = (props) => {
                </Dragger>
             )}
 
-            <OpenSheetMusicDisplay file={xml} options={options} enableBluetooth={enableBluetooth} />
+            <OpenSheetMusicDisplay file={xml} options={options} />
          </div>
       </Content>
    );

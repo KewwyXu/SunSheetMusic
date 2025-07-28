@@ -1,18 +1,46 @@
 ﻿import { ItemType } from 'antd/es/menu/interface';
-import React, { useState } from 'react';
+import { useContext, useState } from 'react';
 import { App } from 'antd';
 import { KDP120G_BLE } from '../../../consts/KDP120G_BLE';
+import { AppContext } from '../../../contexts/AppContext';
 
-export interface UseBluetoothProps {
-   setEnableBluetooth: React.Dispatch<React.SetStateAction<boolean>>;
-}
+export interface UseBluetoothProps {}
 
 export const useBluetooth = (props: UseBluetoothProps) => {
    const { message } = App.useApp();
    const [isConnecting, setIsConnecting] = useState(false);
    const [server, setServer] = useState<BluetoothRemoteGATTServer>(null);
    const bluetooth = navigator.bluetooth;
-   const { setEnableBluetooth } = props;
+   const { setEnableBluetooth, setRingingPitches } = useContext(AppContext);
+
+   const onCharacteristicValueChanged = (e) => {
+      const value = (e.currentTarget as BluetoothRemoteGATTCharacteristic).value;
+      const pitch = value.getInt8(3);
+      const eventNumber = value.getInt8(2);
+
+      console.log(`${Date.now()} : ${pitch}`);
+
+      switch (eventNumber) {
+         case -128:
+            // note off
+            setRingingPitches((oldRingingPitches) => {
+               const newRingingPitches = new Set(oldRingingPitches);
+               newRingingPitches.delete(pitch);
+               return newRingingPitches;
+            });
+            break;
+         case -112:
+            // note on
+            setRingingPitches((oldRingingPitches) => {
+               const newRingingPitches = new Set(oldRingingPitches);
+               newRingingPitches.add(pitch);
+               return newRingingPitches;
+            });
+            break;
+         default:
+            throw `Unknown eventNumber: ${eventNumber}`;
+      }
+   };
 
    const connectBluetoothOnClick = async () => {
       setIsConnecting(true);
@@ -30,14 +58,8 @@ export const useBluetooth = (props: UseBluetoothProps) => {
          const server = await device.gatt.connect();
          const pianoService = await server.getPrimaryService(KDP120G_BLE.PianoService.UUID);
          const characteristic = await pianoService.getCharacteristic(KDP120G_BLE.PianoService.characteristics[0].UUID);
-
          await characteristic.startNotifications();
-
-         characteristic.addEventListener('characteristicvaluechanged', (e) => {
-            const value = (e.currentTarget as BluetoothRemoteGATTCharacteristic).value;
-            const pitch = value.getInt8(3);
-            console.log(pitch);
-         });
+         characteristic.oncharacteristicvaluechanged = onCharacteristicValueChanged;
 
          setServer(server);
          setEnableBluetooth(true);
