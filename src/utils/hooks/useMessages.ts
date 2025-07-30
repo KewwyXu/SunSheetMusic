@@ -1,5 +1,6 @@
 ﻿import { App } from 'antd';
 import { useCallback } from 'react';
+import { PARSE_MIDI_FAIL_MESSAGE_EXISTS_TIME, PARSE_MIDI_SUCCESS_MESSAGE_EXISTS_TIME } from '../../consts/times';
 
 export const useMessages = () => {
    const { message } = App.useApp();
@@ -7,7 +8,7 @@ export const useMessages = () => {
    const succeedUploadingFile = useCallback(async () => {
       await message.success({
          content: 'MIDI文件解析成功',
-         duration: 1,
+         duration: PARSE_MIDI_SUCCESS_MESSAGE_EXISTS_TIME,
       });
    }, [message]);
 
@@ -15,7 +16,7 @@ export const useMessages = () => {
       async (content?: string) => {
          await message.error({
             content: content ?? 'MIDI文件解析失败',
-            duration: 3,
+            duration: PARSE_MIDI_FAIL_MESSAGE_EXISTS_TIME,
          });
       },
       [message]

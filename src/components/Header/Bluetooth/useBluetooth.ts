@@ -55,6 +55,12 @@ export const useBluetooth = (props: UseBluetoothProps) => {
             acceptAllDevices: true,
             optionalServices: [KDP120G_BLE.PianoService.UUID],
          });
+
+         message.loading({
+            content: `蓝牙 ${device.name} 连接中...`,
+            duration: 0,
+         });
+
          const server = await device.gatt.connect();
          const pianoService = await server.getPrimaryService(KDP120G_BLE.PianoService.UUID);
          const characteristic = await pianoService.getCharacteristic(KDP120G_BLE.PianoService.characteristics[0].UUID);
@@ -63,6 +69,7 @@ export const useBluetooth = (props: UseBluetoothProps) => {
 
          setServer(server);
          setEnableBluetooth(true);
+         message.destroy();
          message.success(`已连接到设备: ${device.name}`, 1);
       } catch (error) {
          message.error(`连接失败: ${error.message}`, 3);

@@ -9,6 +9,7 @@ export interface NoteBox {
 }
 
 export interface Note {
+   partIndex: number;
    parentNote: SVGGElement;
    heads: SVGGElement[];
    stem?: SVGGElement;

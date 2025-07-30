@@ -7,11 +7,13 @@ import { CORRECT_KEY_COLOR, FOCUS_KEY_COLOR, WRONG_KEY_COLOR } from '../../const
 import * as im from 'immutable';
 import { Cursor, NoteBox } from './types/Sheet';
 import { AppContext } from '../../contexts/AppContext';
-import { CORRECT_PITCH_HIGHLIGHT_TIME } from '../../consts/times';
+import { CORRECT_PITCH_HIGHLIGHT_TIME, PROCESS_SHEET_TIME_INTERVAL_TIME } from '../../consts/times';
+import { HandMode } from '../../enums/HandMode';
 
 export interface OpenSheetMusicDisplayProps {
    options: IOSMDOptions;
    file: string;
+   handMode: HandMode;
 }
 
 export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => {
@@ -20,7 +22,7 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
    const osmdRef: RefObject<OSMD> = useRef(null);
    const { succeedUploadingFile } = useMessages();
    const { message } = App.useApp();
-   const { options, file } = props;
+   const { options, file, handMode } = props;
    const { enableBluetooth, cursor, setCursor, ringingPitches } = useContext(AppContext);
    const [isLoading, setIsLoading] = useState<boolean>(false);
    const hasProcessedSheetRef = useRef(false);
@@ -28,6 +30,11 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
    const previousCursorRef = useRef<Cursor>(null);
    const allCursorsRef = useRef<Cursor[]>(null);
    const highlightTimeOutsRef = useRef<number[]>(null);
+
+   const svgNS = 'http://www.w3.org/2000/svg';
+   const boxGroupClassName = 'custom-box-group';
+   const partBoxGroupClassName = 'custom-part-box-group';
+   const boxClassName = 'custom-box';
 
    const render = () => {
       if (!osmdRef.current) {
@@ -65,19 +72,35 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
    );
 
    useEffect(() => {
-      cursor?.noteBoxes.forEach((x) => {
+      if (!cursor) {
+         return;
+      }
+
+      let validNoteBoxes: NoteBox[] = cursor.noteBoxes;
+
+      if (handMode == HandMode.Right) {
+         validNoteBoxes = cursor.noteBoxes.filter((x) => x.note.partIndex == 0);
+      }
+
+      if (handMode == HandMode.Left) {
+         validNoteBoxes = cursor.noteBoxes.filter((x) => x.note.partIndex == 1);
+      }
+
+      validNoteBoxes.forEach((x) => {
          x.box.setAttribute('fill', FOCUS_KEY_COLOR);
       });
    }, [cursor]);
 
+   //process bluetooth note event
    useEffect(() => {
       if (ringingPitches && cursor) {
          highlightTimeOutsRef.current?.forEach(window.clearTimeout);
 
          const wrongPitches = new Set<number>();
          const notesCorrection: boolean[] = [];
+         const validNoteBoxes = cursor.noteBoxes.filter((x) => x.box.getAttribute('fill') === FOCUS_KEY_COLOR);
 
-         for (const noteBox of cursor.noteBoxes) {
+         for (const noteBox of validNoteBoxes) {
             let hasWrongPitch = false;
             const pitches = noteBox.note.parentNote
                .getAttribute('data-pitches')
@@ -109,7 +132,7 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
             hideCursor(cursor);
          } else {
             highlightTimeOutsRef.current = [];
-            cursor.noteBoxes.forEach((noteBox, index) => {
+            validNoteBoxes.forEach((noteBox, index) => {
                noteBox.box.setAttribute('fill', notesCorrection[index] ? CORRECT_KEY_COLOR : WRONG_KEY_COLOR);
                highlightTimeOutsRef.current.push(
                   window.setTimeout(() => {
@@ -120,6 +143,113 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
          }
       }
    }, [ringingPitches, setCursor, message]);
+
+   //process handMode change
+   useEffect(() => {
+      setIsLoading(true);
+
+      const sheetContainer = divRef.current;
+      const svg = sheetContainer?.children?.[0]?.children?.[0] as SVGElement;
+
+      if (!svg) {
+         return;
+      }
+
+      const staffLines = Array.from(svg.getElementsByClassName('staffline')) as SVGGElement[];
+      const partBoxGroups = Array.from(svg.getElementsByClassName(partBoxGroupClassName)) as SVGGElement[];
+
+      for (let i = 0; i < staffLines.length; i++) {
+         if ((handMode == HandMode.Right && i % 2 == 1) || (handMode == HandMode.Left && i % 2 == 0)) {
+            staffLines[i].setAttribute('opacity', '0.5');
+            staffLines[i].setAttribute('disabled', 'true');
+            partBoxGroups[i % 2].setAttribute('pointer-events', 'none');
+            cursor?.noteBoxes.forEach((noteBox) => {
+               if (noteBox.note.partIndex === i % 2) {
+                  noteBox.box.setAttribute('fill', 'transparent');
+               }
+            });
+         } else {
+            staffLines[i].removeAttribute('opacity');
+            staffLines[i].removeAttribute('disabled');
+            partBoxGroups[i % 2].removeAttribute('pointer-events');
+            cursor?.noteBoxes.forEach((noteBox) => {
+               if (noteBox.note.partIndex === i % 2) {
+                  noteBox.box.setAttribute('fill', FOCUS_KEY_COLOR);
+               }
+            });
+         }
+      }
+
+      setIsLoading(false);
+   }, [handMode]);
+
+   const addCursors = (
+      svg: SVGElement,
+      note: SVGGElement,
+      childNote: SVGGElement,
+      stems: SVGGElement[],
+      noteHeads: SVGGElement[],
+      noteBoxByStartTickMap: im.Map<number, NoteBox[]>,
+      startTick: number,
+      partCount: number,
+      partIndex: number
+   ) => {
+      let boxGroup = svg.getElementsByClassName(boxGroupClassName)?.[0] as SVGGElement;
+      const partBoxGroups = Array.from(svg.getElementsByClassName(partBoxGroupClassName)) as SVGGElement[];
+
+      if (!boxGroup) {
+         boxGroup = document.createElementNS(svgNS, 'g') as SVGGElement;
+         const svgChildNodes = Array.from(svg.childNodes);
+         svgChildNodes.forEach((x) => svg.removeChild(x));
+         svg.append(boxGroup, ...svgChildNodes);
+
+         for (let i = 0; i < partCount; i++) {
+            const partBoxGroup = document.createElementNS(svgNS, 'g') as SVGGElement;
+            partBoxGroup.id = `custom-part-${i}`;
+            partBoxGroup.classList.add(partBoxGroupClassName);
+            partBoxGroups.push(partBoxGroup);
+            boxGroup.append(partBoxGroup);
+         }
+      }
+
+      const box = document.createElementNS(svgNS, 'rect') as SVGRectElement;
+      box.classList.add(boxClassName);
+      boxGroup.classList.add(boxGroupClassName);
+      partBoxGroups[partIndex].append(box);
+
+      const stem = (childNote.getElementsByClassName('vf-stem')?.[0] ??
+         stems.find((x) => x.id.includes(note.id))) as SVGGElement;
+      const noteBBox = note.getBBox();
+      const stemBBox = stem.getBBox();
+
+      box.setAttribute('x', Math.min(noteBBox.x, stemBBox.x).toString());
+      box.setAttribute('y', Math.min(noteBBox.y, stemBBox.y).toString());
+      box.setAttribute('width', Math.max(noteBBox.width, stemBBox.width).toString());
+      box.setAttribute(
+         'height',
+         (
+            Math.max(noteBBox.y + noteBBox.height, stemBBox.y + stemBBox.height) - Math.min(noteBBox.y, stemBBox.y)
+         ).toString()
+      );
+      box.setAttribute('fill', 'transparent');
+
+      const noteBox: NoteBox = {
+         box: box,
+         note: {
+            partIndex: partIndex,
+            parentNote: note,
+            heads: noteHeads,
+            stem: stem,
+         },
+      };
+
+      noteBoxByStartTickMap.update(startTick, (arr) => [noteBox].concat(arr ?? []));
+
+      const onClick = () => boxOnClick(startTick, noteBoxByStartTickMap);
+      box.onclick = onClick;
+      note.onclick = onClick;
+      stem.onclick = onClick;
+   };
 
    const processSheet = useCallback(() => {
       const sheetContainer = divRef.current;
@@ -133,7 +263,7 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
       divRef.current.setAttribute('opacity', '0');
 
       const xmlPartMeasures = parseXML();
-      const staffLines = svg.getElementsByClassName('staffline');
+      const staffLines = Array.from(svg?.getElementsByClassName('staffline') ?? []) as SVGGElement[];
       const parts: Array<Array<SVGGElement>> = [[], []];
       const noteBoxByStartTickMap = im.Map<number, NoteBox[]>().asMutable();
 
@@ -181,60 +311,21 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
                currentTick += duration;
                note.setAttribute('data-endTick', currentTick.toString());
 
-               const stem = (childNote.getElementsByClassName('vf-stem')?.[0] ??
-                  stems.find((x) => x.id.includes(note.id))) as SVGGElement;
-
                if (pitches.length === 0) {
                   continue;
                }
 
-               const svgNS = 'http://www.w3.org/2000/svg';
-               const boxGroupClassName = 'custom-box-group';
-               const boxClassName = 'custom-box';
-               let boxGroup = svg.getElementsByClassName(boxGroupClassName)?.[0] as SVGGElement;
-
-               if (!boxGroup) {
-                  boxGroup = document.createElementNS(svgNS, 'g') as SVGGElement;
-                  const svgChildNodes = Array.from(svg.childNodes);
-                  svgChildNodes.forEach((x) => svg.removeChild(x));
-                  svg.append(boxGroup, ...svgChildNodes);
-               }
-
-               const box = document.createElementNS(svgNS, 'rect') as SVGRectElement;
-               box.classList.add(boxClassName);
-               boxGroup.classList.add(boxGroupClassName);
-               boxGroup.append(box);
-
-               const noteBBox = note.getBBox();
-               const stemBBox = stem.getBBox();
-
-               box.setAttribute('x', Math.min(noteBBox.x, stemBBox.x).toString());
-               box.setAttribute('y', Math.min(noteBBox.y, stemBBox.y).toString());
-               box.setAttribute('width', Math.max(noteBBox.width, stemBBox.width).toString());
-               box.setAttribute(
-                  'height',
-                  (
-                     Math.max(noteBBox.y + noteBBox.height, stemBBox.y + stemBBox.height) -
-                     Math.min(noteBBox.y, stemBBox.y)
-                  ).toString()
+               addCursors(
+                  svg,
+                  note,
+                  childNote,
+                  stems,
+                  noteHeads,
+                  noteBoxByStartTickMap,
+                  startTick,
+                  parts.length,
+                  partIndex
                );
-               box.setAttribute('fill', 'transparent');
-
-               const noteBox: NoteBox = {
-                  box: box,
-                  note: {
-                     parentNote: note,
-                     heads: noteHeads,
-                     stem: stem,
-                  },
-               };
-
-               noteBoxByStartTickMap.update(startTick, (arr) => [noteBox].concat(arr ?? []));
-
-               const onClick = () => boxOnClick(startTick, noteBoxByStartTickMap);
-               box.onclick = onClick;
-               note.onclick = onClick;
-               stem.onclick = onClick;
             }
          }
       }
@@ -250,7 +341,7 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
 
       skeletonRef.current.style.display = 'none';
       divRef.current.setAttribute('opacity', '1');
-   }, [boxOnClick]);
+   }, []);
 
    const parseXML = () => {
       const xmlString = file ?? window.sessionStorage.getItem('xml');
@@ -275,7 +366,7 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
             await succeedUploadingFile();
          });
       }
-   }, [options, file, succeedUploadingFile]);
+   }, [options, file]);
 
    const handleResize = useCallback(() => {
       render();
@@ -304,7 +395,7 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
                divRef.current.onchange(null);
             }
          }
-      }, 1000);
+      }, PROCESS_SHEET_TIME_INTERVAL_TIME);
    }, [file, enableBluetooth, hasProcessedSheetRef.current]);
 
    if (isLoading) {

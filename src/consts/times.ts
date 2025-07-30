@@ -1,3 +1,7 @@
-﻿//All of these time consts are in unit milliseconds.
-
+﻿//in milliseconds.
 export const CORRECT_PITCH_HIGHLIGHT_TIME = 100;
+export const PROCESS_SHEET_TIME_INTERVAL_TIME = 1000;
+
+//in seconds.
+export const PARSE_MIDI_SUCCESS_MESSAGE_EXISTS_TIME = 1;
+export const PARSE_MIDI_FAIL_MESSAGE_EXISTS_TIME = 3;
