@@ -70,9 +70,10 @@ export const useBluetooth = (props: UseBluetoothProps) => {
          setServer(server);
          setEnableBluetooth(true);
          message.destroy();
-         message.success(`已连接到设备: ${device.name}`, 1);
+         await message.success(`已连接到设备: ${device.name}`, 1);
       } catch (error) {
-         message.error(`连接失败: ${error.message}`, 3);
+         message.destroy();
+         await message.error(`连接失败: ${error.message}`, 3);
       } finally {
          setIsConnecting(false);
       }

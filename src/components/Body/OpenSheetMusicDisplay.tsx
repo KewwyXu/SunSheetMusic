@@ -5,7 +5,7 @@ import { useMessages } from '../../utils/hooks/useMessages';
 import { App, Skeleton, Spin } from 'antd';
 import { CORRECT_KEY_COLOR, FOCUS_KEY_COLOR, WRONG_KEY_COLOR } from '../../consts/colors';
 import * as im from 'immutable';
-import { Cursor, NoteBox } from './types/Sheet';
+import { Cursor, Measure, NoteBox } from './types/Sheet';
 import { AppContext } from '../../contexts/AppContext';
 import { CORRECT_PITCH_HIGHLIGHT_TIME, PROCESS_SHEET_TIME_INTERVAL_TIME } from '../../consts/times';
 import { HandMode } from '../../enums/HandMode';
@@ -53,14 +53,17 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
    };
 
    const boxOnClick = useCallback(
-      (startTick: number, noteBoxByStartTickMap: im.Map<number, NoteBox[]>) => {
+      (startTick: number, noteBoxByStartTickMap: im.Map<number, NoteBox[]>, staffLines: SVGGElement[]) => {
          hideCursor(previousCursorRef.current);
 
          const newNoteBoxes = noteBoxByStartTickMap.get(startTick);
+         const staffLineGroupIndex = newNoteBoxes[0].note.measure.staffLineIndex / 2;
 
-         const newCursor = {
+         const newCursor: Cursor = {
             noteBoxes: newNoteBoxes,
             startTick: startTick,
+            staffLineGroupIndex: staffLineGroupIndex,
+            staffLineGroup: [staffLines[staffLineGroupIndex * 2], staffLines[staffLineGroupIndex * 2 + 1]],
          };
 
          console.log(newNoteBoxes.map((x) => x.note.parentNote.getAttribute('data-pitches')));
@@ -127,6 +130,15 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
             }
 
             const newCursor = allCursorsRef.current[cursorIndex + 1];
+
+            if (newCursor.staffLineGroupIndex > cursor.staffLineGroupIndex) {
+               newCursor.staffLineGroup[0].scrollIntoView({
+                  behavior: 'smooth', // 平滑滚动
+                  block: 'center', // 垂直居中
+                  inline: 'nearest', // 水平方向保持原样
+               });
+            }
+
             setCursor(newCursor);
             previousCursorRef.current = newCursor;
             hideCursor(cursor);
@@ -192,7 +204,9 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
       noteBoxByStartTickMap: im.Map<number, NoteBox[]>,
       startTick: number,
       partCount: number,
-      partIndex: number
+      partIndex: number,
+      measure: Measure,
+      staffLines: SVGGElement[]
    ) => {
       let boxGroup = svg.getElementsByClassName(boxGroupClassName)?.[0] as SVGGElement;
       const partBoxGroups = Array.from(svg.getElementsByClassName(partBoxGroupClassName)) as SVGGElement[];
@@ -236,6 +250,7 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
       const noteBox: NoteBox = {
          box: box,
          note: {
+            measure: measure,
             partIndex: partIndex,
             parentNote: note,
             heads: noteHeads,
@@ -245,7 +260,7 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
 
       noteBoxByStartTickMap.update(startTick, (arr) => [noteBox].concat(arr ?? []));
 
-      const onClick = () => boxOnClick(startTick, noteBoxByStartTickMap);
+      const onClick = () => boxOnClick(startTick, noteBoxByStartTickMap, staffLines);
       box.onclick = onClick;
       note.onclick = onClick;
       stem.onclick = onClick;
@@ -264,12 +279,19 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
 
       const xmlPartMeasures = parseXML();
       const staffLines = Array.from(svg?.getElementsByClassName('staffline') ?? []) as SVGGElement[];
-      const parts: Array<Array<SVGGElement>> = [[], []];
+      const parts: Array<Array<Measure>> = [[], []];
       const noteBoxByStartTickMap = im.Map<number, NoteBox[]>().asMutable();
 
       for (let i = 0; i < staffLines.length; i++) {
          const measures = Array.from(staffLines[i].getElementsByClassName('vf-measure')) as SVGGElement[];
-         parts[i % 2].push(...measures);
+         parts[i % 2].push(
+            ...measures.map((x) => {
+               return {
+                  measureNode: x,
+                  staffLineIndex: i,
+               } as Measure;
+            })
+         );
       }
 
       for (let partIndex = 0; partIndex < parts.length; partIndex++) {
@@ -287,13 +309,13 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
             const xmlMeasure = xmlPart[measureIndex];
 
             const xmlNotes = xmlMeasure.getElementsByTagName('note');
-            const staveNotes = Array.from(measure.getElementsByClassName('vf-stavenote')) as SVGGElement[];
+            const staveNotes = Array.from(measure.measureNode.getElementsByClassName('vf-stavenote')) as SVGGElement[];
 
             if (xmlNotes.length !== staveNotes.length) {
                throw 'XML measure和SVG measure中的音符数量不匹配，请检查文件格式。';
             }
 
-            const stems = Array.from(measure.getElementsByClassName('vf-stem')) as SVGGElement[];
+            const stems = Array.from(measure.measureNode.getElementsByClassName('vf-stem')) as SVGGElement[];
 
             for (let noteIndex = 0; noteIndex < staveNotes.length; noteIndex++) {
                const note = staveNotes[noteIndex];
@@ -324,7 +346,9 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
                   noteBoxByStartTickMap,
                   startTick,
                   parts.length,
-                  partIndex
+                  partIndex,
+                  measure,
+                  staffLines
                );
             }
          }
@@ -332,9 +356,12 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
 
       allCursorsRef.current = [];
       for (const entry of noteBoxByStartTickMap) {
+         const staffLineGroupIndex = entry[1][0].note.measure.staffLineIndex / 2;
          allCursorsRef.current.push({
             startTick: entry[0],
             noteBoxes: entry[1],
+            staffLineGroupIndex: staffLineGroupIndex,
+            staffLineGroup: [staffLines[staffLineGroupIndex * 2], staffLines[staffLineGroupIndex * 2 + 1]],
          });
       }
       allCursorsRef.current.sort((a, b) => a.startTick - b.startTick);
