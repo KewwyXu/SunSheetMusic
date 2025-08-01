@@ -50,7 +50,7 @@ export const Body: React.FC<BodyProps> = (props) => {
                      <InboxOutlined />
                   </p>
                   <p className="ant-upload-text font-bold%" style={{ height: '400px', fontSize: '50px' }}>
-                     点击或拖拽MIDI文件到这里
+                     点击或拖拽 MIDI 或 MusicXML 文件到这里
                   </p>
                </Dragger>
             ) : (

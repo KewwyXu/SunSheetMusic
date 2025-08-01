@@ -1,4 +1,4 @@
-﻿import { useOpenMIDIFile } from './OpenMIDIFile/useOpenMIDIFile';
+﻿import { useOpenFile } from './OpenFile/useOpenFile';
 import { useBluetooth } from './Bluetooth/useBluetooth';
 import { GenericItemType } from '../../global';
 import { HeaderProps } from './Header';
@@ -7,11 +7,11 @@ import { AppContext } from '../../contexts/AppContext';
 
 export const useHeader = (props: HeaderProps) => {
    const { setXml, setIsLoading } = useContext(AppContext);
-   const openMIDIFile = useOpenMIDIFile({ setXml, setIsLoading });
+   const openFile = useOpenFile({ setXml, setIsLoading });
    const bluetooth = useBluetooth({});
 
    const menuItems: GenericItemType[] = [
-      openMIDIFile.OpenMIDIFileMenuItem,
+      openFile.OpenFileMenuItem,
       {
          label: '历史文件',
          key: 2,
@@ -28,7 +28,7 @@ export const useHeader = (props: HeaderProps) => {
    ];
 
    return {
-      openMIDIFile,
+      openFile,
       bluetooth,
       menuItems,
    };

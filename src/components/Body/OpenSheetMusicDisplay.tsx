@@ -9,6 +9,9 @@ import { Cursor, Measure, NoteBox } from './types/Sheet';
 import { AppContext } from '../../contexts/AppContext';
 import { CORRECT_PITCH_HIGHLIGHT_TIME, PROCESS_SHEET_TIME_INTERVAL_TIME } from '../../consts/times';
 import { HandMode } from '../../enums/HandMode';
+import { getMIDINumber } from '../../utils/getMIDINumber';
+import { NoteStep } from '../../types/NoteStep';
+import { parseXML } from '../../utils/parseXML';
 
 export interface OpenSheetMusicDisplayProps {
    options: IOSMDOptions;
@@ -234,18 +237,26 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
       const stem = (childNote.getElementsByClassName('vf-stem')?.[0] ??
          stems.find((x) => x.id.includes(note.id))) as SVGGElement;
       const noteBBox = note.getBBox();
-      const stemBBox = stem.getBBox();
+      let x = 0,
+         y = 0,
+         height = 0,
+         width = 0;
 
-      box.setAttribute('x', Math.min(noteBBox.x, stemBBox.x).toString());
-      box.setAttribute('y', Math.min(noteBBox.y, stemBBox.y).toString());
-      box.setAttribute('width', Math.max(noteBBox.width, stemBBox.width).toString());
-      box.setAttribute(
-         'height',
-         (
-            Math.max(noteBBox.y + noteBBox.height, stemBBox.y + stemBBox.height) - Math.min(noteBBox.y, stemBBox.y)
-         ).toString()
-      );
-      box.setAttribute('fill', 'transparent');
+      if (stem) {
+         const stemBBox = stem.getBBox();
+         x = Math.min(noteBBox.x, stemBBox.x);
+         y = Math.min(noteBBox.y, stemBBox.y);
+         width = Math.max(noteBBox.width, stemBBox.width);
+         height =
+            Math.max(noteBBox.y + noteBBox.height, stemBBox.y + stemBBox.height) - Math.min(noteBBox.y, stemBBox.y);
+      } else {
+         x = noteBBox.x;
+         y = noteBBox.y;
+         width = noteBBox.width;
+         height = noteBBox.height;
+      }
+
+      initNoteBox(box, x, y, height, width);
 
       const noteBox: NoteBox = {
          box: box,
@@ -263,7 +274,17 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
       const onClick = () => boxOnClick(startTick, noteBoxByStartTickMap, staffLines);
       box.onclick = onClick;
       note.onclick = onClick;
-      stem.onclick = onClick;
+      if (stem) {
+         stem.onclick = onClick;
+      }
+   };
+
+   const initNoteBox = (box: SVGRectElement, x: number, y: number, height: number, width: number) => {
+      box.setAttribute('x', x.toString());
+      box.setAttribute('y', y.toString());
+      box.setAttribute('width', width.toString());
+      box.setAttribute('height', height.toString());
+      box.setAttribute('fill', 'transparent');
    };
 
    const processSheet = useCallback(() => {
@@ -277,7 +298,7 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
       skeletonRef.current.style.display = null;
       divRef.current.setAttribute('opacity', '0');
 
-      const xmlPartMeasures = parseXML();
+      const xmlPartMeasures = parseXML(file);
       const staffLines = Array.from(svg?.getElementsByClassName('staffline') ?? []) as SVGGElement[];
       const parts: Array<Array<Measure>> = [[], []];
       const noteBoxByStartTickMap = im.Map<number, NoteBox[]>().asMutable();
@@ -323,7 +344,11 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
                const noteHeads = Array.from(childNote.getElementsByClassName('vf-notehead')) as SVGGElement[];
                const xmlNote = xmlNotes[noteIndex];
                const pitches = Array.from(xmlNote.getElementsByTagName('pitch')).map((x) =>
-                  Number(x.getElementsByTagName('MIDINumber')[0].innerHTML)
+                  getMIDINumber(
+                     x.getElementsByTagName('step')[0].innerHTML as NoteStep,
+                     Number(x.getElementsByTagName('octave')[0].innerHTML),
+                     Number(x.getElementsByTagName('alter')?.[0]?.innerHTML ?? 0)
+                  )
                );
                const duration = Number(xmlNote.getElementsByTagName('duration')[0].innerHTML);
                const startTick = currentTick;
@@ -369,21 +394,6 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
       skeletonRef.current.style.display = 'none';
       divRef.current.setAttribute('opacity', '1');
    }, []);
-
-   const parseXML = () => {
-      const xmlString = file ?? window.sessionStorage.getItem('xml');
-      const xml = new DOMParser().parseFromString(xmlString, 'text/xml');
-
-      const parts = xml.getElementsByTagName('part');
-      const partMeasures: Array<Array<Element>> = [[], []];
-
-      for (let i = 0; i < parts.length; i++) {
-         const measures = Array.from(parts[i].getElementsByTagName('measure'));
-         partMeasures[i % 2].push(...measures);
-      }
-
-      return partMeasures;
-   };
 
    useEffect(() => {
       if (file) {

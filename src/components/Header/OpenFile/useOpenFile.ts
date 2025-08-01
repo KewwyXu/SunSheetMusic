@@ -7,7 +7,7 @@ export type UseOpenMIDIFileProps = {
    setIsLoading: Dispatch<React.SetStateAction<boolean>>;
 };
 
-export const useOpenMIDIFile = (props: UseOpenMIDIFileProps) => {
+export const useOpenFile = (props: UseOpenMIDIFileProps) => {
    const inputRef = useRef<HTMLInputElement>(null);
    const { setXml, setIsLoading } = props;
    const { parseMIDIToXML } = useParseMIDIToXML();
@@ -22,19 +22,23 @@ export const useOpenMIDIFile = (props: UseOpenMIDIFileProps) => {
       const file = e.target.files[0];
 
       if (file) {
-         await parseMIDIToXML(file, setXml);
+         if (file.name.endsWith('.xml')) {
+            setXml(await file.text());
+         } else if (file.name.endsWith('.midi') || file.name.endsWith('.mid')) {
+            await parseMIDIToXML(file, setXml);
+         }
       }
 
       setIsLoading(false);
    };
 
-   const OpenMIDIFileMenuItem: ItemType = {
+   const OpenFileMenuItem: ItemType = {
       label: '文件',
       key: 'File',
       children: [
          {
-            key: 'OpenMIDIFile',
-            label: '打开MIDI文件',
+            key: 'OpenFile',
+            label: '打开 MIDI 或 MusicXML 文件',
             onClick: handleOpenFolder,
          },
          {
@@ -48,6 +52,6 @@ export const useOpenMIDIFile = (props: UseOpenMIDIFileProps) => {
       inputRef,
       handleFileChange,
       handleOpenFolder,
-      OpenMIDIFileMenuItem,
+      OpenFileMenuItem,
    };
 };
