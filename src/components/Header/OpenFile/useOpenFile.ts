@@ -41,10 +41,10 @@ export const useOpenFile = (props: UseOpenMIDIFileProps) => {
             label: '打开 MIDI 或 MusicXML 文件',
             onClick: handleOpenFolder,
          },
-         {
-            key: 'SaveMusicSheet',
-            label: '保存五线谱',
-         },
+         // {
+         //    key: 'SaveMusicSheet',
+         //    label: '保存五线谱',
+         // },
       ],
    };
 
