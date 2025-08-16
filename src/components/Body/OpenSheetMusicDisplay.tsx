@@ -5,18 +5,28 @@ import { useMessages } from '../../utils/hooks/useMessages';
 import { App, Skeleton, Spin } from 'antd';
 import { CORRECT_KEY_COLOR, FOCUS_KEY_COLOR, WRONG_KEY_COLOR } from '../../consts/colors';
 import * as im from 'immutable';
-import { Cursor, Measure, NoteBox } from './types/Sheet';
+import { Cursor, LineForLoopMode, Measure, NoteBox } from './types/Sheet';
 import { AppContext } from '../../contexts/AppContext';
 import { CORRECT_PITCH_HIGHLIGHT_TIME, PROCESS_SHEET_TIME_INTERVAL_TIME } from '../../consts/times';
 import { HandMode } from '../../enums/HandMode';
 import { getMIDINumber } from '../../utils/getMIDINumber';
 import { NoteStep } from '../../types/NoteStep';
 import { parseXML } from '../../utils/parseXML';
+import { PlayMode } from '../../enums/PlayMode';
+import {
+   addCursors,
+   drawLine,
+   handleHandModeChange,
+   highlightLoopedStaffLines,
+   isNoteOutOfLoopedStaffLines,
+   removeHighlightedStaffLines,
+} from './helpers/sheetHelper';
 
 export interface OpenSheetMusicDisplayProps {
    options: IOSMDOptions;
    file: string;
    handMode: HandMode;
+   playMode: PlayMode;
 }
 
 export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => {
@@ -25,8 +35,9 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
    const osmdRef: RefObject<OSMD> = useRef(null);
    const { succeedUploadingFile } = useMessages();
    const { message } = App.useApp();
-   const { options, file, handMode } = props;
-   const { enableBluetooth, cursor, setCursor, ringingPitches } = useContext(AppContext);
+   const { options, file, handMode, playMode } = props;
+   let { enableBluetooth, cursor, setCursor, ringingPitches } = useContext(AppContext);
+   enableBluetooth = true;
    const [isLoading, setIsLoading] = useState<boolean>(false);
    const hasProcessedSheetRef = useRef(false);
    const intervalIdRef = useRef(0);
@@ -34,10 +45,13 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
    const allCursorsRef = useRef<Cursor[]>(null);
    const highlightTimeOutsRef = useRef<number[]>(null);
 
-   const svgNS = 'http://www.w3.org/2000/svg';
-   const boxGroupClassName = 'custom-box-group';
-   const partBoxGroupClassName = 'custom-part-box-group';
-   const boxClassName = 'custom-box';
+   /*
+     Loop play mode
+      */
+   const startLineRef = useRef<LineForLoopMode>(null);
+   const endLineRef = useRef<LineForLoopMode>(null);
+   const clickStartNoteMessageId = 'clickStartNoteMessage';
+   const clickEndNoteMessageId = 'clickEndNoteMessage';
 
    const render = () => {
       if (!osmdRef.current) {
@@ -49,6 +63,34 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
       setIsLoading(false);
    };
 
+   /*
+     process playMode change
+      */
+   useEffect(() => {
+      window.sessionStorage.setItem('playMode', playMode.toString());
+      if (playMode == PlayMode.Loop) {
+         message.info({
+            key: clickStartNoteMessageId,
+            content: '请点击开始音符',
+            duration: 0,
+            style: {
+               marginTop: '20vh',
+            },
+         });
+         setCursor(undefined);
+         hideCursor(cursor);
+         previousCursorRef.current = undefined;
+      } else {
+         message.destroy(clickStartNoteMessageId);
+         message.destroy(clickEndNoteMessageId);
+         startLineRef.current?.line.remove();
+         endLineRef.current?.line.remove();
+         removeHighlightedStaffLines();
+         startLineRef.current = undefined;
+         endLineRef.current = undefined;
+      }
+   }, [playMode]);
+
    const hideCursor = (cursor: Cursor) => {
       cursor?.noteBoxes.forEach((x) => {
          x.box.setAttribute('fill', 'transparent');
@@ -58,23 +100,61 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
    const boxOnClick = useCallback(
       (startTick: number, noteBoxByStartTickMap: im.Map<number, NoteBox[]>, staffLines: SVGGElement[]) => {
          hideCursor(previousCursorRef.current);
-
          const newNoteBoxes = noteBoxByStartTickMap.get(startTick);
-         const staffLineGroupIndex = newNoteBoxes[0].note.measure.staffLineIndex / 2;
-
-         const newCursor: Cursor = {
-            noteBoxes: newNoteBoxes,
-            startTick: startTick,
-            staffLineGroupIndex: staffLineGroupIndex,
-            staffLineGroup: [staffLines[staffLineGroupIndex * 2], staffLines[staffLineGroupIndex * 2 + 1]],
-         };
+         const svg = divRef.current.children[0].children[0] as SVGElement;
+         const playMode = window.sessionStorage.getItem('playMode') as PlayMode;
+         const staffLineGroupIndex = Math.floor(newNoteBoxes[0].note.measure.staffLineIndex / 2);
 
          console.log(newNoteBoxes.map((x) => x.note.parentNote.getAttribute('data-pitches')));
 
-         setCursor(newCursor);
-         previousCursorRef.current = newCursor;
+         if (playMode == PlayMode.Normal || (startLineRef.current && endLineRef.current)) {
+            if (
+               playMode == PlayMode.Loop &&
+               isNoteOutOfLoopedStaffLines(newNoteBoxes, startLineRef.current, endLineRef.current)
+            ) {
+               message.info('音符不在循环范围内，请重新选择音符', 1);
+               return;
+            }
+
+            const newCursor: Cursor = {
+               noteBoxes: newNoteBoxes,
+               startTick: startTick,
+               staffLineGroupIndex: staffLineGroupIndex,
+               staffLineGroup: [staffLines[staffLineGroupIndex * 2], staffLines[staffLineGroupIndex * 2 + 1]],
+            };
+
+            setCursor(newCursor);
+            previousCursorRef.current = newCursor;
+         } else {
+            const nearestCursorIndexInLoop = allCursorsRef.current.findIndex((x) => x.startTick == startTick);
+
+            if (!startLineRef.current) {
+               startLineRef.current = {
+                  line: drawLine(newNoteBoxes, 'start', svg),
+                  staffLineGroupIndex: staffLineGroupIndex,
+                  nearestCursorIndexInLoop: nearestCursorIndexInLoop,
+               };
+               message.destroy(clickStartNoteMessageId);
+               message.info({
+                  key: clickEndNoteMessageId,
+                  content: '请点击结束音符',
+                  duration: 0,
+                  style: {
+                     marginTop: '20vh',
+                  },
+               });
+            } else {
+               endLineRef.current = {
+                  line: drawLine(newNoteBoxes, 'end', svg),
+                  staffLineGroupIndex: staffLineGroupIndex,
+                  nearestCursorIndexInLoop: nearestCursorIndexInLoop,
+               };
+               highlightLoopedStaffLines(staffLines, startLineRef.current, endLineRef.current);
+               message.destroy(clickEndNoteMessageId);
+            }
+         }
       },
-      [setCursor]
+      [setCursor, message]
    );
 
    useEffect(() => {
@@ -126,15 +206,25 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
          //move to next cursor
          if (wrongPitches.size === 0) {
             const cursorIndex = allCursorsRef.current.findIndex((x) => x.startTick === cursor.startTick);
+            let newCursor: Cursor;
 
             //finish
-            if (cursorIndex >= allCursorsRef.current.length - 1) {
-               message.success('恭喜你，演奏结束！');
+            if (playMode == PlayMode.Normal) {
+               if (cursorIndex >= allCursorsRef.current.length - 1) {
+                  message.success('恭喜你，演奏结束！');
+                  return;
+               } else {
+                  newCursor = allCursorsRef.current[cursorIndex + 1];
+               }
+            } else if (playMode == PlayMode.Loop) {
+               if (cursorIndex == endLineRef.current.nearestCursorIndexInLoop) {
+                  newCursor = allCursorsRef.current[startLineRef.current.nearestCursorIndexInLoop];
+               } else {
+                  newCursor = allCursorsRef.current[cursorIndex + 1];
+               }
             }
 
-            const newCursor = allCursorsRef.current[cursorIndex + 1];
-
-            if (newCursor.staffLineGroupIndex > cursor.staffLineGroupIndex) {
+            if (newCursor.staffLineGroupIndex != cursor.staffLineGroupIndex) {
                newCursor.staffLineGroup[0].scrollIntoView({
                   behavior: 'smooth', // 平滑滚动
                   block: 'center', // 垂直居中
@@ -170,122 +260,9 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
          return;
       }
 
-      const staffLines = Array.from(svg.getElementsByClassName('staffline')) as SVGGElement[];
-      const partBoxGroups = Array.from(svg.getElementsByClassName(partBoxGroupClassName)) as SVGGElement[];
-
-      for (let i = 0; i < staffLines.length; i++) {
-         if ((handMode == HandMode.Right && i % 2 == 1) || (handMode == HandMode.Left && i % 2 == 0)) {
-            staffLines[i].setAttribute('opacity', '0.5');
-            staffLines[i].setAttribute('disabled', 'true');
-            partBoxGroups[i % 2].setAttribute('pointer-events', 'none');
-            cursor?.noteBoxes.forEach((noteBox) => {
-               if (noteBox.note.partIndex === i % 2) {
-                  noteBox.box.setAttribute('fill', 'transparent');
-               }
-            });
-         } else {
-            staffLines[i].removeAttribute('opacity');
-            staffLines[i].removeAttribute('disabled');
-            partBoxGroups[i % 2].removeAttribute('pointer-events');
-            cursor?.noteBoxes.forEach((noteBox) => {
-               if (noteBox.note.partIndex === i % 2) {
-                  noteBox.box.setAttribute('fill', FOCUS_KEY_COLOR);
-               }
-            });
-         }
-      }
-
+      handleHandModeChange(handMode, svg, cursor);
       setIsLoading(false);
    }, [handMode]);
-
-   const addCursors = (
-      svg: SVGElement,
-      note: SVGGElement,
-      childNote: SVGGElement,
-      stems: SVGGElement[],
-      noteHeads: SVGGElement[],
-      noteBoxByStartTickMap: im.Map<number, NoteBox[]>,
-      startTick: number,
-      partCount: number,
-      partIndex: number,
-      measure: Measure,
-      staffLines: SVGGElement[]
-   ) => {
-      let boxGroup = svg.getElementsByClassName(boxGroupClassName)?.[0] as SVGGElement;
-      const partBoxGroups = Array.from(svg.getElementsByClassName(partBoxGroupClassName)) as SVGGElement[];
-
-      if (!boxGroup) {
-         boxGroup = document.createElementNS(svgNS, 'g') as SVGGElement;
-         const svgChildNodes = Array.from(svg.childNodes);
-         svgChildNodes.forEach((x) => svg.removeChild(x));
-         svg.append(boxGroup, ...svgChildNodes);
-
-         for (let i = 0; i < partCount; i++) {
-            const partBoxGroup = document.createElementNS(svgNS, 'g') as SVGGElement;
-            partBoxGroup.id = `custom-part-${i}`;
-            partBoxGroup.classList.add(partBoxGroupClassName);
-            partBoxGroups.push(partBoxGroup);
-            boxGroup.append(partBoxGroup);
-         }
-      }
-
-      const box = document.createElementNS(svgNS, 'rect') as SVGRectElement;
-      box.classList.add(boxClassName);
-      boxGroup.classList.add(boxGroupClassName);
-      partBoxGroups[partIndex].append(box);
-
-      const stem = (childNote.getElementsByClassName('vf-stem')?.[0] ??
-         stems.find((x) => x.id.includes(note.id))) as SVGGElement;
-      const noteBBox = note.getBBox();
-      let x = 0,
-         y = 0,
-         height = 0,
-         width = 0;
-
-      if (stem) {
-         const stemBBox = stem.getBBox();
-         x = Math.min(noteBBox.x, stemBBox.x);
-         y = Math.min(noteBBox.y, stemBBox.y);
-         width = Math.max(noteBBox.width, stemBBox.width);
-         height =
-            Math.max(noteBBox.y + noteBBox.height, stemBBox.y + stemBBox.height) - Math.min(noteBBox.y, stemBBox.y);
-      } else {
-         x = noteBBox.x;
-         y = noteBBox.y;
-         width = noteBBox.width;
-         height = noteBBox.height;
-      }
-
-      initNoteBox(box, x, y, height, width);
-
-      const noteBox: NoteBox = {
-         box: box,
-         note: {
-            measure: measure,
-            partIndex: partIndex,
-            parentNote: note,
-            heads: noteHeads,
-            stem: stem,
-         },
-      };
-
-      noteBoxByStartTickMap.update(startTick, (arr) => [noteBox].concat(arr ?? []));
-
-      const onClick = () => boxOnClick(startTick, noteBoxByStartTickMap, staffLines);
-      box.onclick = onClick;
-      note.onclick = onClick;
-      if (stem) {
-         stem.onclick = onClick;
-      }
-   };
-
-   const initNoteBox = (box: SVGRectElement, x: number, y: number, height: number, width: number) => {
-      box.setAttribute('x', x.toString());
-      box.setAttribute('y', y.toString());
-      box.setAttribute('width', width.toString());
-      box.setAttribute('height', height.toString());
-      box.setAttribute('fill', 'transparent');
-   };
 
    const processSheet = useCallback(() => {
       const sheetContainer = divRef.current;
@@ -310,6 +287,7 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
                return {
                   measureNode: x,
                   staffLineIndex: i,
+                  staffLine: staffLines[i],
                } as Measure;
             })
          );
@@ -317,6 +295,7 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
 
       for (let partIndex = 0; partIndex < parts.length; partIndex++) {
          const part = parts[partIndex];
+         const correspondingPart = parts[(partIndex + 1) % parts.length];
          const xmlPart = xmlPartMeasures[partIndex];
 
          if (part.length !== xmlPart.length) {
@@ -327,6 +306,7 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
 
          for (let measureIndex = 0; measureIndex < part.length; measureIndex++) {
             const measure = part[measureIndex];
+            const correspondingMeasure = correspondingPart[measureIndex];
             const xmlMeasure = xmlPart[measureIndex];
 
             const xmlNotes = xmlMeasure.getElementsByTagName('note');
@@ -373,7 +353,9 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
                   parts.length,
                   partIndex,
                   measure,
-                  staffLines
+                  correspondingMeasure,
+                  staffLines,
+                  boxOnClick
                );
             }
          }
@@ -381,7 +363,7 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
 
       allCursorsRef.current = [];
       for (const entry of noteBoxByStartTickMap) {
-         const staffLineGroupIndex = entry[1][0].note.measure.staffLineIndex / 2;
+         const staffLineGroupIndex = Math.floor(entry[1][0].note.measure.staffLineIndex / 2);
          allCursorsRef.current.push({
             startTick: entry[0],
             noteBoxes: entry[1],
@@ -393,7 +375,7 @@ export const OpenSheetMusicDisplay: FC<OpenSheetMusicDisplayProps> = (props) => 
 
       skeletonRef.current.style.display = 'none';
       divRef.current.setAttribute('opacity', '1');
-   }, []);
+   }, [file, boxOnClick]);
 
    useEffect(() => {
       if (file) {

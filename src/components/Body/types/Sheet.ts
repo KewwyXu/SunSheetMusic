@@ -12,6 +12,7 @@ export interface NoteBox {
 
 export interface Note {
    measure: Measure;
+   correspondingMeasure: Measure;
    partIndex: number;
    parentNote: SVGGElement;
    heads: SVGGElement[];
@@ -22,4 +23,11 @@ export interface Note {
 export interface Measure {
    measureNode: SVGGElement;
    staffLineIndex: number;
+   staffLine: SVGGElement;
+}
+
+export interface LineForLoopMode {
+   line: SVGLineElement;
+   staffLineGroupIndex: number;
+   nearestCursorIndexInLoop: number;
 }

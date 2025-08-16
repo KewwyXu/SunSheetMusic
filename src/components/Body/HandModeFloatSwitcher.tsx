@@ -1,11 +1,7 @@
 ﻿import { FloatButton } from 'antd';
 import { CSSProperties, FC } from 'react';
-import { createFromIconfontCN } from '@ant-design/icons';
 import { HandMode } from '../../enums/HandMode';
-
-const IconFont = createFromIconfontCN({
-   scriptUrl: '//at.alicdn.com/t/c/font_4987078_0fsm1zqgtpw.js',
-});
+import { IconFont } from '../Icons/IconFont';
 
 export interface HandModeFloatSwitcherProps {
    handMode: HandMode;
@@ -23,7 +19,6 @@ export const HandModeFloatSwitcher: FC<HandModeFloatSwitcherProps> = (props) => 
    };
 
    const iconStyle: CSSProperties = {
-      color: 'orange',
       fontSize: '25px',
       marginLeft: '-2px',
    };

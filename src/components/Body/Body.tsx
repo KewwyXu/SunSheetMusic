@@ -9,6 +9,8 @@ import { IOSMDOptions } from 'opensheetmusicdisplay';
 import { AppContext } from '../../contexts/AppContext';
 import { HandModeFloatSwitcher } from './HandModeFloatSwitcher';
 import { HandMode } from '../../enums/HandMode';
+import { PlayModeFloatSwitcher } from './PlayModeFloatSwitcher';
+import { PlayMode } from '../../enums/PlayMode';
 
 export interface BodyProps {}
 
@@ -20,6 +22,7 @@ export const Body: React.FC<BodyProps> = (props) => {
    const { xml, isLoading } = useContext(AppContext);
    const { uploadProps } = useBody(props);
    const [handMode, setHandMode] = useState(HandMode.Double);
+   const [playMode, setPlayMode] = useState(PlayMode.Normal);
 
    const options: IOSMDOptions = useMemo(() => {
       return {
@@ -55,7 +58,8 @@ export const Body: React.FC<BodyProps> = (props) => {
                </Dragger>
             ) : (
                <div>
-                  <OpenSheetMusicDisplay file={xml} options={options} handMode={handMode} />
+                  <OpenSheetMusicDisplay file={xml} options={options} handMode={handMode} playMode={playMode} />
+                  <PlayModeFloatSwitcher playMode={playMode} setPlayMode={setPlayMode} />
                   <HandModeFloatSwitcher handMode={handMode} setHandMode={setHandMode} />
                </div>
             )}
