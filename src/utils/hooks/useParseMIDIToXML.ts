@@ -1,6 +1,5 @@
 ﻿import { useMessages } from './useMessages';
-import { API_HOST } from '../../consts/common';
-import axios from 'axios';
+import { AxiosClient } from '../../AxiosClient';
 
 export const useParseMIDIToXML = () => {
    const { failUploadingOrParsingFile } = useMessages();
@@ -10,7 +9,7 @@ export const useParseMIDIToXML = () => {
       formData.append('midiFile', file);
 
       try {
-         const response = await axios.post(`${API_HOST}parseMIDIToXML`, formData, {
+         const response = await AxiosClient.post(`parseMIDIToXML`, formData, {
             headers: {
                'Content-Type': 'multipart/form-data',
             },
