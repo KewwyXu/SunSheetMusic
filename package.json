@@ -7,10 +7,11 @@
   "scripts": {
     "test": "npm test",
     "start": "webpack serve",
-    "build": "webpack --mode production",
+    "build": "webpack --mode production --devtool false",
     "eslint": "eslint src --ext .ts,.tsx,.js,.jsx",
     "link midi2xml": "npm link @kewwy-xu/midi2xml",
-    "unlink midi2xml": "npm unlink @kewwy-xu/midi2xml"
+    "unlink midi2xml": "npm unlink @kewwy-xu/midi2xml",
+    "analyze": "npm run build && webpack-bundle-analyzer dist/"
   },
   "author": "Kewwy Xu",
   "license": "ISC",
@@ -60,6 +61,7 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.34.1",
     "webpack": "^5.99.9",
+    "webpack-bundle-analyzer": "^4.10.2",
     "webpack-cli": "^6.0.1",
     "webpack-dev-server": "^5.2.2"
   },
